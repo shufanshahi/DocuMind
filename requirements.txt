@@ -16,6 +16,11 @@ rank_bm25   # BM25 keyword search for hybrid search
 # the sentence-transformers install above — no separate package needed,
 # just a separate model download on first use (src/retrieval/reranker.py).
 
+# Phase 4 — RAG Pipeline: LangChain implementation
+langchain-core
+langchain-ollama   # ChatOllama; local generation via the Ollama daemon (llama3.1:8b)
+tiktoken           # approximate, model-agnostic token counting for context budgeting
+
 # Dev-only, used to generate the sample PDF in data/raw/ and run tests/
 # reportlab
 # pytest
