@@ -9,4 +9,5 @@ data/raw/*txt
 data/raw/*md
 explaination
 .vscode
+.claude
 RAG_Project_Plan.md
