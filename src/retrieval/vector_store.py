@@ -89,3 +89,11 @@ class ChromaVectorStore:
 
     def list_collections(self) -> list[str]:
         return [c.name for c in self._client.list_collections()]
+
+    def raw_collection(self, collection_name: str):
+        """The underlying `chromadb.Collection` object, for handing to a
+        third-party integration (Phase 5's LlamaIndex `ChromaVectorStore`
+        wants the real collection, not this wrapper) that expects to talk
+        to Chroma directly rather than through our own thin interface.
+        """
+        return self._client.get_collection(collection_name)

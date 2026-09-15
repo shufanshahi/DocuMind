@@ -21,6 +21,11 @@ langchain-core
 langchain-ollama   # ChatOllama; local generation via the Ollama daemon (llama3.1:8b)
 tiktoken           # approximate, model-agnostic token counting for context budgeting
 
+# Phase 5 — RAG Pipeline: LlamaIndex implementation
+llama-index-core
+llama-index-llms-ollama              # LlamaIndex's Ollama LLM wrapper
+llama-index-vector-stores-chroma     # points a VectorStoreIndex at an existing Chroma collection
+
 # Dev-only, used to generate the sample PDF in data/raw/ and run tests/
 # reportlab
 # pytest
