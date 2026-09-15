@@ -5,7 +5,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))  # for `import rag_langcha
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ingest.chunkers import Chunk  # noqa: E402
-from rag_langchain import ask, build_chain  # noqa: E402
+from prompts.templates import FEW_SHOT_EXAMPLES, SYSTEM_PROMPT, SYSTEM_PROMPT_BASELINE  # noqa: E402
+from rag_langchain import ask, build_chain, build_prompt  # noqa: E402
 
 
 def make_chunk(chunk_id, text):
@@ -79,3 +80,35 @@ def test_ask_reports_context_token_count():
     chain = build_chain(retriever, make_fake_llm(), k=1, token_budget=1000)
     result = ask(chain, "some question")
     assert result.context_tokens > 0
+
+
+def test_build_prompt_includes_few_shot_messages_by_default():
+    prompt = build_prompt()
+    contents = [m.content for m in prompt.invoke({"context": "CTX", "question": "Q"}).to_messages()]
+    assert len(contents) == 1 + len(FEW_SHOT_EXAMPLES) * 2 + 1  # system + examples + final human turn
+    assert contents[0] == SYSTEM_PROMPT
+
+
+def test_build_prompt_excludes_few_shot_messages_when_disabled():
+    prompt = build_prompt(use_few_shot=False)
+    contents = [m.content for m in prompt.invoke({"context": "CTX", "question": "Q"}).to_messages()]
+    assert len(contents) == 2  # just system + final human turn
+
+
+def test_build_prompt_uses_the_given_system_prompt():
+    prompt = build_prompt(system_prompt=SYSTEM_PROMPT_BASELINE, use_few_shot=False)
+    contents = [m.content for m in prompt.invoke({"context": "CTX", "question": "Q"}).to_messages()]
+    assert contents[0] == SYSTEM_PROMPT_BASELINE
+
+
+def test_build_chain_plumbs_prompt_variant_through_to_the_llm_call():
+    retriever = FakeRetriever([make_chunk("a", "relevant fact one")])
+    captured = []
+    chain = build_chain(
+        retriever, make_fake_llm(calls=captured), k=1, token_budget=1000, system_prompt=SYSTEM_PROMPT_BASELINE, use_few_shot=False
+    )
+    ask(chain, "some question")
+    assert len(captured) == 1
+    contents = [m.content for m in captured[0].to_messages()]
+    assert contents[0] == SYSTEM_PROMPT_BASELINE
+    assert len(contents) == 2  # no few-shot examples spliced in

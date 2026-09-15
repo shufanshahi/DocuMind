@@ -26,7 +26,7 @@ from langchain_ollama import ChatOllama  # noqa: E402
 from embeddings.nomic_embedder import NomicEmbedder  # noqa: E402
 from embeddings.st_embedder import SentenceTransformerEmbedder  # noqa: E402
 from ingest.chunkers import STRATEGIES, Chunk  # noqa: E402
-from prompts.templates import HUMAN_TEMPLATE, SYSTEM_PROMPT  # noqa: E402
+from prompts.templates import HUMAN_TEMPLATE, SYSTEM_PROMPT, SYSTEM_PROMPT_BASELINE, build_few_shot_messages  # noqa: E402
 from rag.context_budget import TokenCounter, assemble_context  # noqa: E402
 from retrieval.retriever import Retriever  # noqa: E402
 
@@ -35,7 +35,19 @@ EMBEDDER_FACTORIES = {
     "nomic_embed_text": NomicEmbedder,
 }
 
-PROMPT = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", HUMAN_TEMPLATE)])
+
+def build_prompt(system_prompt: str = SYSTEM_PROMPT, use_few_shot: bool = True) -> ChatPromptTemplate:
+    """Phase 6: the prompt is no longer a fixed module-level constant --
+    `guardrail_experiments.py` needs to build both the baseline and the
+    guarded+few-shot variant side by side to measure whether the guardrail
+    changes actually help (see explaination/phase6_theory.md), so prompt
+    construction became a function of which variant is being tested.
+    """
+    messages = [("system", system_prompt)]
+    if use_few_shot:
+        messages.extend(build_few_shot_messages())
+    messages.append(("human", HUMAN_TEMPLATE))
+    return ChatPromptTemplate.from_messages(messages)
 
 
 @dataclass
@@ -47,7 +59,15 @@ class RagAnswer:
     context_tokens: int
 
 
-def build_chain(retriever: Retriever, llm, k: int = 5, token_budget: int = 2000, counter: TokenCounter | None = None):
+def build_chain(
+    retriever: Retriever,
+    llm,
+    k: int = 5,
+    token_budget: int = 2000,
+    counter: TokenCounter | None = None,
+    system_prompt: str = SYSTEM_PROMPT,
+    use_few_shot: bool = True,
+):
     """Assemble the LCEL chain: retrieve -> budget context -> prompt -> generate.
 
     Structured as two composed Runnables rather than one big function so
@@ -59,7 +79,8 @@ def build_chain(retriever: Retriever, llm, k: int = 5, token_budget: int = 2000,
     away, so a caller can still show citations after the chain runs.
     """
     counter = counter or TokenCounter()
-    generate = PROMPT | llm | StrOutputParser()
+    prompt = build_prompt(system_prompt, use_few_shot)
+    generate = prompt | llm | StrOutputParser()
 
     def retrieve_and_assemble(question: str) -> dict:
         chunks = retriever.retrieve(question, k=k)
@@ -110,6 +131,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--token-budget", type=int, default=2000)
     parser.add_argument("--hybrid", action="store_true")
     parser.add_argument("--rerank", action="store_true")
+    parser.add_argument(
+        "--prompt-variant",
+        choices=["guarded", "baseline"],
+        default="guarded",
+        help="'guarded' (default): Phase 6's refined system prompt + few-shot examples. 'baseline': the unmodified plan §8 prompt, for comparison.",
+    )
     return parser.parse_args()
 
 
@@ -118,7 +145,10 @@ def main() -> None:
     embedder = EMBEDDER_FACTORIES[args.embedder]()
     retriever = Retriever(strategy=args.strategy, embedder=embedder, use_hybrid=args.hybrid, use_reranker=args.rerank)
     llm = ChatOllama(model=args.llm_model, temperature=0)
-    chain = build_chain(retriever, llm, k=args.k, token_budget=args.token_budget)
+    system_prompt = SYSTEM_PROMPT if args.prompt_variant == "guarded" else SYSTEM_PROMPT_BASELINE
+    chain = build_chain(
+        retriever, llm, k=args.k, token_budget=args.token_budget, system_prompt=system_prompt, use_few_shot=(args.prompt_variant == "guarded")
+    )
 
     result = ask(chain, args.question)
 

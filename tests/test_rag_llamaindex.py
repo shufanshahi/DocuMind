@@ -8,6 +8,7 @@ from llama_index.core.base.llms.types import ChatMessage, ChatResponse, MessageR
 from llama_index.core.retrievers import BaseRetriever  # noqa: E402
 from llama_index.core.schema import NodeWithScore, TextNode  # noqa: E402
 
+from prompts.templates import FEW_SHOT_EXAMPLES, SYSTEM_PROMPT_BASELINE  # noqa: E402
 from rag_llamaindex import DocuMindQueryEngine, _chunk_from_node  # noqa: E402
 
 
@@ -91,3 +92,32 @@ def test_custom_query_refuses_when_retriever_finds_nothing():
     engine = DocuMindQueryEngine(retriever=retriever, llm=llm, strategy="fixed_size", k=5, token_budget=1000)
     response = engine.query("some question")
     assert "don't have enough information" in response.response.lower()
+
+
+def test_custom_query_includes_few_shot_messages_by_default():
+    retriever = FakeRetriever([make_node("a", "relevant fact one")])
+    llm = FakeLLM()
+    engine = DocuMindQueryEngine(retriever=retriever, llm=llm, strategy="fixed_size", k=1, token_budget=1000)
+    engine.query("some question")
+    assert len(llm.calls) == 1
+    messages = llm.calls[0]
+    assert len(messages) == 1 + len(FEW_SHOT_EXAMPLES) * 2 + 1  # system + examples + final user turn
+
+
+def test_custom_query_excludes_few_shot_messages_when_disabled():
+    retriever = FakeRetriever([make_node("a", "relevant fact one")])
+    llm = FakeLLM()
+    engine = DocuMindQueryEngine(retriever=retriever, llm=llm, strategy="fixed_size", k=1, token_budget=1000, use_few_shot=False)
+    engine.query("some question")
+    messages = llm.calls[0]
+    assert len(messages) == 2  # just system + final user turn
+
+
+def test_custom_query_uses_the_given_system_prompt():
+    retriever = FakeRetriever([make_node("a", "relevant fact one")])
+    llm = FakeLLM()
+    engine = DocuMindQueryEngine(
+        retriever=retriever, llm=llm, strategy="fixed_size", k=1, token_budget=1000, system_prompt=SYSTEM_PROMPT_BASELINE, use_few_shot=False
+    )
+    engine.query("some question")
+    assert llm.calls[0][0].content == SYSTEM_PROMPT_BASELINE

@@ -41,7 +41,7 @@ from embeddings.llamaindex_adapter import LlamaIndexEmbedderAdapter  # noqa: E40
 from embeddings.nomic_embedder import NomicEmbedder  # noqa: E402
 from embeddings.st_embedder import SentenceTransformerEmbedder  # noqa: E402
 from ingest.chunkers import STRATEGIES, Chunk  # noqa: E402
-from prompts.templates import SYSTEM_PROMPT  # noqa: E402
+from prompts.templates import SYSTEM_PROMPT, SYSTEM_PROMPT_BASELINE, build_few_shot_messages  # noqa: E402
 from rag.context_budget import TokenCounter, assemble_context  # noqa: E402
 from retrieval.vector_store import ChromaVectorStore  # noqa: E402
 
@@ -96,6 +96,10 @@ class DocuMindQueryEngine(CustomQueryEngine):
     k: int = 5
     token_budget: int = 2000
     counter: object = None
+    system_prompt: str = SYSTEM_PROMPT
+    use_few_shot: bool = True
+
+    _ROLE_MAP = {"user": MessageRole.USER, "assistant": MessageRole.ASSISTANT}
 
     def custom_query(self, query_str: str) -> Response:
         nodes = self.retriever.retrieve(query_str)[: self.k]
@@ -109,10 +113,15 @@ class DocuMindQueryEngine(CustomQueryEngine):
                 metadata={"used_chunks": [], "dropped_chunks": assembled.dropped_chunks, "context_tokens": 0},
             )
 
-        messages = [
-            ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"CONTEXT:\n{assembled.text}\n\nQUESTION:\n{query_str}\n\nANSWER (with citations):"),
-        ]
+        messages = [ChatMessage(role=MessageRole.SYSTEM, content=self.system_prompt)]
+        if self.use_few_shot:
+            # build_few_shot_messages() returns generic ("user"/"assistant", text)
+            # tuples so this same data drives both frameworks' message lists --
+            # see rag_langchain.py's build_prompt() for the LangChain side.
+            messages.extend(ChatMessage(role=self._ROLE_MAP[role], content=content) for role, content in build_few_shot_messages())
+        messages.append(
+            ChatMessage(role=MessageRole.USER, content=f"CONTEXT:\n{assembled.text}\n\nQUESTION:\n{query_str}\n\nANSWER (with citations):")
+        )
         answer = self.llm.chat(messages).message.content
 
         return Response(
@@ -133,6 +142,8 @@ def build_query_engine(
     token_budget: int = 2000,
     llm_model: str = "llama3.1:8b",
     persist_dir: str | Path = "data/chroma_db",
+    system_prompt: str = SYSTEM_PROMPT,
+    use_few_shot: bool = True,
 ) -> DocuMindQueryEngine:
     """Point LlamaIndex's `VectorStoreIndex` at a Chroma collection Phase
     2's `embed.py` already populated, rather than re-ingesting documents
@@ -159,7 +170,16 @@ def build_query_engine(
     # well past LlamaIndex's 30s default timeout -- a slow cold start, not a
     # hung server.
     llm = Ollama(model=llm_model, request_timeout=180.0, keep_alive="30m", context_window=4096)
-    return DocuMindQueryEngine(retriever=retriever, llm=llm, strategy=strategy, k=k, token_budget=token_budget, counter=TokenCounter())
+    return DocuMindQueryEngine(
+        retriever=retriever,
+        llm=llm,
+        strategy=strategy,
+        k=k,
+        token_budget=token_budget,
+        counter=TokenCounter(),
+        system_prompt=system_prompt,
+        use_few_shot=use_few_shot,
+    )
 
 
 @dataclass
@@ -218,6 +238,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--token-budget", type=int, default=2000)
     parser.add_argument("--compare-chunking", action="store_true", help="compare LlamaIndex's SentenceSplitter to our recursive chunker and exit")
+    parser.add_argument(
+        "--prompt-variant",
+        choices=["guarded", "baseline"],
+        default="guarded",
+        help="'guarded' (default): Phase 6's refined system prompt + few-shot examples. 'baseline': the unmodified plan §8 prompt, for comparison.",
+    )
     return parser.parse_args()
 
 
@@ -233,8 +259,15 @@ def main() -> None:
         sys.exit(1)
 
     embedder = EMBEDDER_FACTORIES[args.embedder]()
+    system_prompt = SYSTEM_PROMPT if args.prompt_variant == "guarded" else SYSTEM_PROMPT_BASELINE
     query_engine = build_query_engine(
-        strategy=args.strategy, embedder=embedder, k=args.k, token_budget=args.token_budget, llm_model=args.llm_model
+        strategy=args.strategy,
+        embedder=embedder,
+        k=args.k,
+        token_budget=args.token_budget,
+        llm_model=args.llm_model,
+        system_prompt=system_prompt,
+        use_few_shot=(args.prompt_variant == "guarded"),
     )
     result = ask(query_engine, args.question)
 
