@@ -1,0 +1,13 @@
+# Phase 1 — Document Ingestion & Chunking
+numpy
+pypdf
+
+# Optional: only needed if you run ingest.py with --sentence-transformers
+# for higher-quality semantic chunking (adds a torch dependency + model
+# download). Without it, semantic chunking falls back to a dependency-free
+# hashing embedder — see src/ingest/embedders.py.
+# sentence-transformers
+
+# Dev-only, used to generate the sample PDF in data/raw/ and run tests/
+# reportlab
+# pytest
