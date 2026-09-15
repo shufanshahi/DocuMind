@@ -14,9 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from dataclasses import fields
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -24,24 +22,14 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from embeddings.base import Embedder  # noqa: E402
 from embeddings.nomic_embedder import NomicEmbedder  # noqa: E402
 from embeddings.st_embedder import SentenceTransformerEmbedder  # noqa: E402
-from ingest.chunkers import STRATEGIES, Chunk  # noqa: E402
+from ingest.chunkers import STRATEGIES  # noqa: E402
+from ingest.storage import load_chunks_jsonl  # noqa: E402
 from retrieval.vector_store import ChromaVectorStore  # noqa: E402
 
 EMBEDDER_FACTORIES = {
     "sentence_transformers": SentenceTransformerEmbedder,
     "nomic_embed_text": NomicEmbedder,
 }
-
-_CHUNK_FIELDS = {f.name for f in fields(Chunk)}
-
-
-def load_chunks(jsonl_path: Path) -> list[Chunk]:
-    chunks = []
-    with jsonl_path.open(encoding="utf-8") as f:
-        for line in f:
-            data = json.loads(line)
-            chunks.append(Chunk(**{k: v for k, v in data.items() if k in _CHUNK_FIELDS}))
-    return chunks
 
 
 def embed_in_batches(embedder: Embedder, texts: list[str], batch_size: int = 32):
@@ -76,7 +64,7 @@ def main() -> None:
         if not jsonl_path.exists():
             print(f"Skipping {strategy!r}: {jsonl_path} not found (run ingest.py first)", file=sys.stderr)
             continue
-        chunks = load_chunks(jsonl_path)
+        chunks = load_chunks_jsonl(jsonl_path)
         if not chunks:
             continue
         texts = [c.text for c in chunks]

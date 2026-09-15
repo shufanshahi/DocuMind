@@ -10,6 +10,12 @@ sentence-transformers   # local embedding model (also used by ingest.py --senten
 # Ollama daemon (`ollama pull nomic-embed-text`); src/embeddings/nomic_embedder.py
 # just calls its HTTP API with `requests`.
 
+# Phase 3 — Retrieval
+rank_bm25   # BM25 keyword search for hybrid search
+# The cross-encoder re-ranker (cross-encoder/ms-marco-MiniLM-L-6-v2) reuses
+# the sentence-transformers install above — no separate package needed,
+# just a separate model download on first use (src/retrieval/reranker.py).
+
 # Dev-only, used to generate the sample PDF in data/raw/ and run tests/
 # reportlab
 # pytest

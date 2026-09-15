@@ -10,6 +10,13 @@ from ingest.chunkers import (  # noqa: E402
     sentence_window_chunk,
     split_sentences,
 )
+from ingest.embedders import HashingBagOfWordsEmbedder  # noqa: E402
+
+# Always pin the dependency-free fallback embedder in tests: now that
+# sentence-transformers is installed (Phase 2), semantic_chunk()'s default
+# get_embedder() would otherwise load a real model, making these tests slow
+# and dependent on model-cache/network availability.
+FAKE_EMBED_FN = HashingBagOfWordsEmbedder()
 
 LOREM = (
     "The quick brown fox jumps over the lazy dog. "
@@ -64,7 +71,7 @@ def test_split_sentences_offsets_are_exact():
 
 
 def test_semantic_chunk_covers_whole_text():
-    spans = semantic_chunk(LOREM, similarity_threshold=0.9)  # force many splits
+    spans = semantic_chunk(LOREM, embed_fn=FAKE_EMBED_FN, similarity_threshold=0.9)  # force many splits
     _assert_offsets_reconstruct(LOREM, spans)
     assert spans[0][1] == 0
     assert spans[-1][2] == len(LOREM)
